@@ -2,9 +2,8 @@
 A support library for the Challenger RP2040 UWB boards with the DWM3000 module.
 
 <img src="https://usercontent.one/wp/ilabs.se/wp-content/uploads/2023/04/iso1-2048-1.jpg" alt="drawing" width="640"/>
-![Challenger RP2040 UWB](https://usercontent.one/wp/ilabs.se/wp-content/uploads/2023/04/iso1-2048-1.jpg)
 
-##Introduction
+## Introduction
 
 The DWM3000 is an ultra-wideband (UWB) transceiver module developed by Qorvo Inc. It operates in the frequency range of 3.1 GHz to 10.6 GHz and has a maximum output power of 4 dBm. The module uses the IEEE 802.15.4a standard for UWB communication, which enables highly accurate ranging and positioning with an accuracy of up to 10 cm.
 
@@ -20,6 +19,6 @@ We paired this marvelous module with our own proven RP2040 base design to create
 
 The included examples are all tested to work on our board so you can get started creating super cool stuff from day one.
 
-##Usage
+## Usage
 
 (TBD)
