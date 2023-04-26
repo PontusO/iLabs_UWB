@@ -1,11 +1,23 @@
+/*
+ * ----------------------------------------------------------------------------
+ *                        _ _           _
+ *                       (_) |         | |
+ *                        _| |     __ _| |__  ___
+ *                       | | |    / _` | '_ \/ __|
+ *                       | | |___| (_| | |_) \__ \
+ *                       |_|______\__,_|_.__/|___/
+ *
+ * ----------------------------------------------------------------------------
+ * "THE BEER-WARE LICENSE" (Revision 42):
+ * <pontus@ilabs.se> wrote this file. As long as you retain this notice you
+ * can do whatever you want with this stuff. If we meet some day, and you think
+ * this stuff is worth it, you can buy me a beer in return - Pontus Oldberg
+ * ----------------------------------------------------------------------------
+ */
+
 #include "dw3000.h"
 
 #define APP_NAME "SIMPLE RX v1.1"
-
-// connection pins
-const uint8_t PIN_RST = 27; // reset pin
-const uint8_t PIN_IRQ = 34; // irq pin
-const uint8_t PIN_SS = 4;   // spi select pin
 
 /* Default communication configuration. We use default non-STS DW mode. */
 static dwt_config_t config = {
@@ -25,7 +37,7 @@ static dwt_config_t config = {
 };
 
 /* Buffer to store received frame. See NOTE 1 below. */
-static uint8_t rx_buffer[FRAME_LEN_MAX];
+static char rx_buffer[FRAME_LEN_MAX];
 
 /* Hold copy of status register state here for reference so that it can be examined at a debug breakpoint. */
 uint32_t status_reg;
@@ -34,19 +46,24 @@ uint16_t frame_len;
 
 void setup()
 {
-  UART_init();
-  test_run_info((unsigned char *)APP_NAME);
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, LOW);
+  
+  while (!Serial)
+    delay(100);
 
-  /* Configure SPI rate, DW3000 supports up to 38 MHz */
-  /* Reset DW IC */
-  spiBegin(PIN_IRQ, PIN_RST);
-  spiSelect(PIN_SS);
+  Serial.begin(115200);
+  Serial.println(APP_NAME);
+
+  /* Start SPI and get stuff going*/
+  spiBegin();
+  spiSelect();
 
   delay(200); // Time needed for DW3000 to start up (transition from INIT_RC to IDLE_RC, or could wait for SPIRDY event)
 
   while (!dwt_checkidlerc()) // Need to make sure DW IC is in IDLE_RC before proceeding
   {
-    UART_puts("IDLE FAILED\r\n");
+    Serial.println("IDLE FAILED !");
     while (1)
       ;
   }
@@ -54,20 +71,22 @@ void setup()
   dwt_softreset();
   delay(200);
 
-  if (dwt_initialise(DWT_DW_INIT) == DWT_ERROR)
+  while (!dwt_checkidlerc()) // Need to make sure DW IC is in IDLE_RC before proceeding 
   {
-    UART_puts("INIT FAILED\r\n");
-    while (1)
-      ;
+    Serial.print("IDLE FAILED\r\n");
+    while (1);
   }
 
-  // Enabling LEDs here for debug so that for each TX the D1 LED will flash on DW3000 red eval-shield boards.
-  dwt_setleds(DWT_LEDS_ENABLE | DWT_LEDS_INIT_BLINK);
+  if (dwt_initialise(DWT_DW_INIT) == DWT_ERROR)
+  {
+    Serial.print("INIT FAILED\r\n");
+    while (1) ;
+  }
 
   // Configure DW IC. See NOTE 5 below.
   if (dwt_configure(&config)) // if the dwt_configure returns DWT_ERROR either the PLL or RX calibration has failed the host should reset the device
   {
-    UART_puts("CONFIG FAILED\r\n");
+    Serial.println("CONFIG FAILED !");
     while (1)
       ;
   }
@@ -99,13 +118,18 @@ void loop()
     frame_len = dwt_read32bitreg(RX_FINFO_ID) & RX_FINFO_RXFLEN_BIT_MASK;
     if (frame_len <= FRAME_LEN_MAX)
     {
-      dwt_readrxdata(rx_buffer, frame_len - FCS_LEN, 0); /* No need to read the FCS/CRC. */
+      dwt_readrxdata((uint8_t *)rx_buffer, frame_len - FCS_LEN, 0); /* No need to read the FCS/CRC. */
     }
 
     /* Clear good RX frame event in the DW IC status register. */
     dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_RXFCG_BIT_MASK);
 
-    test_run_info((unsigned char *)"Frame Received");
+    pinMode(LED_BUILTIN, OUTPUT);
+    digitalWrite(LED_BUILTIN, HIGH);
+    Serial.printf("Frame Received \'%s\'\n", rx_buffer+2);
+    delay(25);
+    pinMode(LED_BUILTIN, OUTPUT);
+    digitalWrite(LED_BUILTIN, LOW);    
   }
   else
   {

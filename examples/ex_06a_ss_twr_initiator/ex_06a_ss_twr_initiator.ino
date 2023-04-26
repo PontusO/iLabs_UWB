@@ -1,11 +1,23 @@
+/*
+ * ----------------------------------------------------------------------------
+ *                        _ _           _
+ *                       (_) |         | |
+ *                        _| |     __ _| |__  ___
+ *                       | | |    / _` | '_ \/ __|
+ *                       | | |___| (_| | |_) \__ \
+ *                       |_|______\__,_|_.__/|___/
+ *
+ * ----------------------------------------------------------------------------
+ * "THE BEER-WARE LICENSE" (Revision 42):
+ * <pontus@ilabs.se> wrote this file. As long as you retain this notice you
+ * can do whatever you want with this stuff. If we meet some day, and you think
+ * this stuff is worth it, you can buy me a beer in return - Pontus Oldberg
+ * ----------------------------------------------------------------------------
+ */
+
 #include "dw3000.h"
 
 #define APP_NAME "SS TWR INIT v1.0"
-
-// connection pins
-const uint8_t PIN_RST = 27; // reset pin
-const uint8_t PIN_IRQ = 34; // irq pin
-const uint8_t PIN_SS = 4; // spi select pin
 
 /* Default communication configuration. We use default non-STS DW mode. */
 static dwt_config_t config = {
@@ -86,36 +98,44 @@ static double distance;
 extern dwt_txconfig_t txconfig_options;
 
 void setup() {
-  UART_init();
-  test_run_info((unsigned char *)APP_NAME);
+  while (!Serial)
+    delay(100);
 
-  /* Configure SPI rate, DW3000 supports up to 38 MHz */
-  /* Reset DW IC */
-  spiBegin(PIN_IRQ, PIN_RST);
-  spiSelect(PIN_SS);
+  Serial.begin(115200);
+  Serial.println(APP_NAME);
 
-  delay(2); // Time needed for DW3000 to start up (transition from INIT_RC to IDLE_RC, or could wait for SPIRDY event)
+  /* Start SPI and get stuff going*/
+  spiBegin();
+  spiSelect();
+
+  delay(200); // Time needed for DW3000 to start up (transition from INIT_RC to IDLE_RC, or could wait for SPIRDY event)
 
   while (!dwt_checkidlerc()) // Need to make sure DW IC is in IDLE_RC before proceeding 
   {
-    UART_puts("IDLE FAILED\r\n");
-    while (1) ;
+    Serial.print("IDLE FAILED\r\n");
+    while (1);
+  }
+
+  dwt_softreset();
+  delay(200);
+
+  while (!dwt_checkidlerc()) // Need to make sure DW IC is in IDLE_RC before proceeding 
+  {
+    Serial.print("IDLE FAILED\r\n");
+    while (1);
   }
 
   if (dwt_initialise(DWT_DW_INIT) == DWT_ERROR)
   {
-    UART_puts("INIT FAILED\r\n");
-    while (1) ;
+    Serial.print("INIT FAILED\r\n");
+    while (1);
   }
-
-  // Enabling LEDs here for debug so that for each TX the D1 LED will flash on DW3000 red eval-shield boards.
-  dwt_setleds(DWT_LEDS_ENABLE | DWT_LEDS_INIT_BLINK);
 
   /* Configure DW IC. See NOTE 6 below. */
   if(dwt_configure(&config)) // if the dwt_configure returns DWT_ERROR either the PLL or RX calibration has failed the host should reset the device
   {
-    UART_puts("CONFIG FAILED\r\n");
-    while (1) ;
+    Serial.print("CONFIG FAILED\r\n");
+    while (1);
   }
 
     /* Configure the TX spectrum parameters (power, PG delay and PG count) */
@@ -195,7 +215,7 @@ void loop() {
 
                     /* Display computed distance on LCD. */
                     snprintf(dist_str, sizeof(dist_str), "DIST: %3.2f m", distance);
-                    test_run_info((unsigned char *)dist_str);
+                    Serial.println(dist_str);
                 }
             }
         }

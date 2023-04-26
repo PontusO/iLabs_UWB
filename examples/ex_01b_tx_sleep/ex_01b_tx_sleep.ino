@@ -1,11 +1,23 @@
+/*
+ * ----------------------------------------------------------------------------
+ *                        _ _           _
+ *                       (_) |         | |
+ *                        _| |     __ _| |__  ___
+ *                       | | |    / _` | '_ \/ __|
+ *                       | | |___| (_| | |_) \__ \
+ *                       |_|______\__,_|_.__/|___/
+ *
+ * ----------------------------------------------------------------------------
+ * "THE BEER-WARE LICENSE" (Revision 42):
+ * <pontus@ilabs.se> wrote this file. As long as you retain this notice you
+ * can do whatever you want with this stuff. If we meet some day, and you think
+ * this stuff is worth it, you can buy me a beer in return - Pontus Oldberg
+ * ----------------------------------------------------------------------------
+ */
+
 #include "dw3000.h"
 
 #define APP_NAME "TX SLEEP v1.0"
-
-// connection pins
-const uint8_t PIN_RST = 27; // reset pin
-const uint8_t PIN_IRQ = 34; // irq pin
-const uint8_t PIN_SS = 4; // spi select pin
 
 /* Default communication configuration. We use default non-STS DW mode. */
 static dwt_config_t config = {
@@ -31,156 +43,121 @@ static dwt_config_t config = {
  *     - byte 2 -> 9: device ID, see NOTE 1 below.
  *     -   */
 static uint8_t tx_msg[] = {0xC5, 0, 'D', 'E', 'C', 'A', 'W', 'A', 'V', 'E'};
+
 /* Index to access to sequence number of the blink frame in the tx_msg array. */
 #define BLINK_FRAME_SN_IDX 1
 
 #define FRAME_LENGTH    sizeof(tx_msg)+FCS_LEN//The real length that is going to be transmitted
 
 /* Inter-frame delay period, in milliseconds. */
-#define TX_DELAY_MS 1000
-
+#define TX_DELAY_MS 5000
 
 /* Values for the PG_DELAY and TX_POWER registers reflect the bandwidth and power of the spectrum at the current
  * temperature. These values can be calibrated prior to taking reference measurements. See NOTE 2 below. */
 extern dwt_txconfig_t txconfig_options;
 
 void setup() {
-  UART_init();
-  test_run_info((unsigned char *)APP_NAME);
+  while (!Serial)
+    delay(100);
 
-  /* Configure SPI rate, DW3000 supports up to 38 MHz */
-  /* Reset DW IC */
-  spiBegin(PIN_IRQ, PIN_RST);
-  spiSelect(PIN_SS);
+  Serial.begin(115200);
+  Serial.println(APP_NAME);
 
-  delay(2); // Time needed for DW3000 to start up (transition from INIT_RC to IDLE_RC, or could wait for SPIRDY event)
+  /* Start SPI and get stuff going*/
+  spiBegin();
+  spiSelect();
+
+  delay(200); // Time needed for DW3000 to start up (transition from INIT_RC to IDLE_RC, or could wait for SPIRDY event)
 
   while (!dwt_checkidlerc()) // Need to make sure DW IC is in IDLE_RC before proceeding 
   {
-    UART_puts("IDLE FAILED\r\n");
+    Serial.print("IDLE FAILED\r\n");
     while (1) ;
+  }
+
+  dwt_softreset();
+  delay(200);
+
+  while (!dwt_checkidlerc()) // Need to make sure DW IC is in IDLE_RC before proceeding
+  {
+    Serial.println("IDLE FAILED02");
+    while (1);
   }
 
   if (dwt_initialise(DWT_DW_INIT) == DWT_ERROR)
   {
-    UART_puts("INIT FAILED\r\n");
+    Serial.print("INIT FAILED\r\n");
     while (1) ;
   }
-
-  // Enabling LEDs here for debug so that for each TX the D1 LED will flash on DW3000 red eval-shield boards.
-  dwt_setleds(DWT_LEDS_ENABLE | DWT_LEDS_INIT_BLINK);
 
   /* Configure DW IC. See NOTE 6 below. */
   if(dwt_configure(&config)) // if the dwt_configure returns DWT_ERROR either the PLL or RX calibration has failed the host should reset the device
   {
-    UART_puts("CONFIG FAILED\r\n");
+    Serial.print("CONFIG FAILED\r\n");
     while (1) ;
   }
+  Serial.println("CONFIG OK");
 
-    /* Configure the TX spectrum parameters (power, PG delay and PG count) */
-    dwt_configuretxrf(&txconfig_options);
+  /* Configure the TX spectrum parameters (power, PG delay and PG count) */
+  dwt_configuretxrf(&txconfig_options);
 
-    /* To help with debug or as information we can enable DW IC TX/RX states to drive LEDs
-     * so that as frames are transmitted the TX LED flashes.
-     * dwt_setleds(DWT_LEDS_ENABLE | DWT_LEDS_INIT_BLINK);
-     */
-    dwt_setlnapamode(DWT_LNA_ENABLE | DWT_PA_ENABLE);
+  /* To help with debug or as information we can enable DW IC TX/RX states to drive LEDs
+   * so that as frames are transmitted the TX LED flashes.
+   * dwt_setleds(DWT_LEDS_ENABLE | DWT_LEDS_INIT_BLINK);
+   */
+  //dwt_setlnapamode(DWT_LNA_ENABLE | DWT_PA_ENABLE);
 
-    /* Configure sleep and wake-up parameters. */
-    dwt_configuresleep(DWT_CONFIG, DWT_PRES_SLEEP | DWT_PGFCAL | DWT_WAKE_CSN | DWT_WAKE_WUP | DWT_SLP_EN);  
+  /* Configure sleep and wake-up parameters. */
+  dwt_configuresleep(DWT_CONFIG, DWT_PRES_SLEEP | DWT_PGFCAL | DWT_WAKE_CSN | DWT_WAKE_WUP | DWT_SLP_EN);
+  Serial.println("Exiting setup !");
 }
 
 void loop() {
-/* Write frame data to DW IC and prepare transmission. See NOTE 3 below. */
-        dwt_writetxdata(FRAME_LENGTH-FCS_LEN, tx_msg, 0); /* Zero offset in TX buffer. Data does not include the CRC */
-        /* In this example since the length of the transmitted frame does not change,
-         * nor the other parameters of the dwt_writetxfctrl function, the
-         * dwt_writetxfctrl call could be outside the main while(1) loop.
-         */
-        dwt_writetxfctrl(FRAME_LENGTH, 0, 0); /* Zero offset in TX buffer, no ranging. */
+  /* Write frame data to DW IC and prepare transmission. See NOTE 3 below. */
+  dwt_writetxdata(FRAME_LENGTH - FCS_LEN, tx_msg, 0); /* Zero offset in TX buffer. Data does not include the CRC */
 
-        /* Start transmission. */
-        dwt_starttx(DWT_START_TX_IMMEDIATE);
+  /* In this example since the length of the transmitted frame does not change,
+   * nor the other parameters of the dwt_writetxfctrl function, the
+   * dwt_writetxfctrl call could be outside the main while(1) loop.
+   */
+  dwt_writetxfctrl(FRAME_LENGTH, 0, 0); /* Zero offset in TX buffer, no ranging. */
 
-        /* Poll DW IC until TX frame sent event set. See NOTE 4 below.
-         * STATUS register is 5 bytes long but, as the event we are looking at is in the first byte of the register, we can use this simplest API
-         * function to access it.*/
-        while (!(dwt_read32bitreg(SYS_STATUS_ID) & SYS_STATUS_TXFRS_BIT_MASK))
-        { };
+  /* Start transmission. */
+  dwt_starttx(DWT_START_TX_IMMEDIATE);
+  delay(10);
+  
+  /* Poll DW IC until TX frame sent event set. See NOTE 4 below.
+   * STATUS register is 5 bytes long but, as the event we are looking at is in the first byte of the register, we can use this simplest API
+   * function to access it.*/
+  while (!(dwt_read32bitreg(SYS_STATUS_ID) & SYS_STATUS_TXFRS_BIT_MASK))
+  { };
 
-        /* Clear TX frame sent event. */
-        dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_TXFRS_BIT_MASK);
+  /* Clear TX frame sent event. */
+  dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_TXFRS_BIT_MASK);
 
-        test_run_info((unsigned char *)"TX Frame Sent");
-        
-        Sleep(200); /* If using LEDs we need to add small delay to see the TX LED blink */
+  Serial.println("TX Frame Sent");
+  
+  Sleep(200); /* If using LEDs we need to add small delay to see the TX LED blink */
 
-        /* Put DW IC to sleep. Go to IDLE state after wakeup*/
-        dwt_entersleep(DWT_DW_IDLE); // DWT_DW_IDLE_RC
+  /* Put DW IC to sleep. Go to IDLE state after wakeup*/
+  dwt_entersleep(DWT_DW_IDLE); // DWT_DW_IDLE_RC
 
-        /* Execute a delay between transmissions. */
-        Sleep(TX_DELAY_MS);
+  /* Execute a delay between transmissions. */
+  Sleep(TX_DELAY_MS);
 
-        /* Wake DW IC up. See NOTE 5 below. */
-        dwt_wakeup_ic();
+  /* Wake DW IC up. See NOTE 5 below. */
+  dwt_wakeup_ic();
 
-        Sleep(2); // Time needed for DW3000 to start up (transition from INIT_RC to IDLE_RC, or could wait for SPIRDY event)
+  Sleep(200); // Time needed for DW3000 to start up (transition from INIT_RC to IDLE_RC, or could wait for SPIRDY event)
 
-        while(!dwt_checkidlerc()) //check in IDLE_RC before proceeding
-        {
-        }
+  while(!dwt_checkidlerc())
+    delay(1); //check in IDLE_RC before proceeding
 
-        /* Restore the required configurations on wake */
-        //dwt_restoreconfig();
-        restoreconfig();
+  /* Restore the required configurations on wake */
+  dwt_restoreconfig();
 
-        /* Increment the blink frame sequence number (modulo 256). */
-        tx_msg[BLINK_FRAME_SN_IDX]++;
-}
-
-void restoreconfig() {
-  // dwt_restoreconfig();
-  test_run_info((unsigned char *)"TODO: dwt_restoreconfig(); not working");
-  test_run_info((unsigned char *)"TODO: force a full reconfig");
-
-  spiBegin(PIN_IRQ, PIN_RST);
-  spiSelect(PIN_SS);
-
-  delay(2); // Time needed for DW3000 to start up (transition from INIT_RC to IDLE_RC, or could wait for SPIRDY event)
-
-  while (!dwt_checkidlerc()) // Need to make sure DW IC is in IDLE_RC before proceeding 
-  {
-    UART_puts("IDLE FAILED\r\n");
-    while (1) ;
-  }
-
-  if (dwt_initialise(DWT_DW_INIT) == DWT_ERROR)
-  {
-    UART_puts("INIT FAILED\r\n");
-    while (1) ;
-  }
-
-  // Enabling LEDs here for debug so that for each TX the D1 LED will flash on DW3000 red eval-shield boards.
-  dwt_setleds(DWT_LEDS_ENABLE | DWT_LEDS_INIT_BLINK);
-
-  /* Configure DW IC. See NOTE 6 below. */
-  if(dwt_configure(&config)) // if the dwt_configure returns DWT_ERROR either the PLL or RX calibration has failed the host should reset the device
-  {
-    UART_puts("CONFIG FAILED\r\n");
-    while (1) ;
-  }
-
-    /* Configure the TX spectrum parameters (power, PG delay and PG count) */
-    dwt_configuretxrf(&txconfig_options);
-
-    /* To help with debug or as information we can enable DW IC TX/RX states to drive LEDs
-     * so that as frames are transmitted the TX LED flashes.
-     * dwt_setleds(DWT_LEDS_ENABLE | DWT_LEDS_INIT_BLINK);
-     */
-    dwt_setlnapamode(DWT_LNA_ENABLE | DWT_PA_ENABLE);
-
-    /* Configure sleep and wake-up parameters. */
-    dwt_configuresleep(DWT_CONFIG, DWT_PRES_SLEEP | DWT_PGFCAL | DWT_WAKE_CSN | DWT_WAKE_WUP | DWT_SLP_EN); 
+  /* Increment the blink frame sequence number (modulo 256). */
+  tx_msg[BLINK_FRAME_SN_IDX]++;
 }
 
 /*****************************************************************************************************************************************************

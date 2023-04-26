@@ -1,11 +1,23 @@
+/*
+ * ----------------------------------------------------------------------------
+ *                        _ _           _
+ *                       (_) |         | |
+ *                        _| |     __ _| |__  ___
+ *                       | | |    / _` | '_ \/ __|
+ *                       | | |___| (_| | |_) \__ \
+ *                       |_|______\__,_|_.__/|___/
+ *
+ * ----------------------------------------------------------------------------
+ * "THE BEER-WARE LICENSE" (Revision 42):
+ * <pontus@ilabs.se> wrote this file. As long as you retain this notice you
+ * can do whatever you want with this stuff. If we meet some day, and you think
+ * this stuff is worth it, you can buy me a beer in return - Pontus Oldberg
+ * ----------------------------------------------------------------------------
+ */
+
 #include "dw3000.h"
 
 #define APP_NAME "TX AUTO SLP v1.0"
-
-// connection pins
-const uint8_t PIN_RST = 27; // reset pin
-const uint8_t PIN_IRQ = 34; // irq pin
-const uint8_t PIN_SS = 4; // spi select pin
 
 /* Default communication configuration. We use default non-STS DW mode. */
 static dwt_config_t config = {
@@ -30,11 +42,12 @@ static dwt_config_t config = {
  *     - byte 2 -> 9: device ID, see NOTE 1 below.
  *     - byte 10/11: frame check-sum, automatically set by DW IC.  */
 static uint8_t tx_msg[] = {0xC5, 0, 'D', 'E', 'C', 'A', 'W', 'A', 'V', 'E', 0, 0};
+
 /* Index to access to sequence number of the blink frame in the tx_msg array. */
 #define BLINK_FRAME_SN_IDX 1
 
 /* Inter-frame delay period, in milliseconds. */
-#define TX_DELAY_MS 1000
+#define TX_DELAY_MS 5000
 
 uint32_t reg = 0;
 
@@ -43,37 +56,43 @@ uint32_t reg = 0;
 extern dwt_txconfig_t txconfig_options;
 
 void setup() {
-  UART_init();
-  test_run_info((unsigned char *)APP_NAME);
+  while (!Serial)
+    delay(100);
 
-  test_run_info((unsigned char *)"Need to check the mutex, does not wakeup all the time...");
+  Serial.begin(115200);
+  Serial.println(APP_NAME);
 
-  /* Configure SPI rate, DW3000 supports up to 38 MHz */
-  /* Reset DW IC */
-  spiBegin(PIN_IRQ, PIN_RST);
-  spiSelect(PIN_SS);
+  /* Start SPI and get stuff going*/
+  spiBegin();
+  spiSelect();
 
-  delay(2); // Time needed for DW3000 to start up (transition from INIT_RC to IDLE_RC, or could wait for SPIRDY event)
+  delay(200); // Time needed for DW3000 to start up (transition from INIT_RC to IDLE_RC, or could wait for SPIRDY event)
 
   while (!dwt_checkidlerc()) // Need to make sure DW IC is in IDLE_RC before proceeding 
   {
-    UART_puts("IDLE FAILED\r\n");
+    Serial.print("IDLE FAILED\r\n");
     while (1) ;
+  }
+
+  dwt_softreset();
+  delay(200);
+
+  while (!dwt_checkidlerc()) // Need to make sure DW IC is in IDLE_RC before proceeding
+  {
+    Serial.println("IDLE FAILED02");
+    while (1);
   }
 
   if (dwt_initialise(DWT_DW_INIT) == DWT_ERROR)
   {
-    UART_puts("INIT FAILED\r\n");
+    Serial.print("INIT FAILED\r\n");
     while (1) ;
   }
-
-  // Enabling LEDs here for debug so that for each TX the D1 LED will flash on DW3000 red eval-shield boards.
-  dwt_setleds(DWT_LEDS_ENABLE | DWT_LEDS_INIT_BLINK);
 
   /* Configure DW IC. See NOTE 6 below. */
   if(dwt_configure(&config)) // if the dwt_configure returns DWT_ERROR either the PLL or RX calibration has failed the host should reset the device
   {
-    UART_puts("CONFIG FAILED\r\n");
+    Serial.print("CONFIG FAILED\r\n");
     while (1) ;
   }
 
@@ -107,7 +126,7 @@ void loop() {
          * If interrupts are enabled, (e.g. if MTXFRS bit is set in the SYS_MASK register) then the TXFRS event will cause an active interrupt and
          * prevent the DW IC from sleeping. */
 
-        test_run_info((unsigned char *)"TX Frame Sent");
+        Serial.println("TX Frame Sent");
 
         /* Execute a delay between transmissions. */
         Sleep(TX_DELAY_MS);

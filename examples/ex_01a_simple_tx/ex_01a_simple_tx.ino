@@ -1,11 +1,23 @@
+/*
+ * ----------------------------------------------------------------------------
+ *                        _ _           _
+ *                       (_) |         | |
+ *                        _| |     __ _| |__  ___
+ *                       | | |    / _` | '_ \/ __|
+ *                       | | |___| (_| | |_) \__ \
+ *                       |_|______\__,_|_.__/|___/
+ *
+ * ----------------------------------------------------------------------------
+ * "THE BEER-WARE LICENSE" (Revision 42):
+ * <pontus@ilabs.se> wrote this file. As long as you retain this notice you
+ * can do whatever you want with this stuff. If we meet some day, and you think
+ * this stuff is worth it, you can buy me a beer in return - Pontus Oldberg
+ * ----------------------------------------------------------------------------
+ */
+
 #include "dw3000.h"
 
 #define APP_NAME "SIMPLE TX v1.1"
-
-// connection pins
-const uint8_t PIN_RST = 27; // reset pin
-const uint8_t PIN_IRQ = 34; // irq pin
-const uint8_t PIN_SS = 4;   // spi select pin
 
 /* Default communication configuration. We use default non-STS DW mode. */
 static dwt_config_t config = {
@@ -42,21 +54,25 @@ extern dwt_txconfig_t txconfig_options;
 
 void setup()
 {
-  UART_init();
-  test_run_info((unsigned char *)APP_NAME);
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, LOW);
+  
+//  while (!Serial)
+    delay(100);
 
-  /* Configure SPI rate, DW3000 supports up to 38 MHz */
-  /* Reset DW IC */
-  spiBegin(PIN_IRQ, PIN_RST);
-  spiSelect(PIN_SS);
+  Serial.begin(115200);
+  Serial.println(APP_NAME);
+
+  /* Start SPI and get stuff going*/
+  spiBegin();
+  spiSelect();
 
   delay(200); // Time needed for DW3000 to start up (transition from INIT_RC to IDLE_RC, or could wait for SPIRDY event)
 
   while (!dwt_checkidlerc()) // Need to make sure DW IC is in IDLE_RC before proceeding
   {
-    test_run_info((unsigned char *)"IDLE FAILED01\r\n");
-    while (100)
-      ;
+    Serial.println("IDLE FAILED01");
+    while (1);
   }
 
   dwt_softreset();
@@ -64,31 +80,25 @@ void setup()
 
   while (!dwt_checkidlerc()) // Need to make sure DW IC is in IDLE_RC before proceeding
   {
-    test_run_info((unsigned char *)"IDLE FAILED02\r\n");
-    while (100)
-      ;
+    Serial.println("IDLE FAILED02");
+    while (1);
   }
 
-  // test_run_info((unsigned char *)"IDLE OK\r\n");
+  // Serial.println("IDLE OK");
   if (dwt_initialise(DWT_DW_INIT) == DWT_ERROR)
   {
-    test_run_info((unsigned char *)"INIT FAILED\r\n");
-    while (100)
-      ;
+    Serial.println("INIT FAILED");
+    while (1);
   }
-  // test_run_info((unsigned char *)"INIT OK\r\n");
-
-  // Enabling LEDs here for debug so that for each TX the D1 LED will flash on DW3000 red eval-shield boards.
-  dwt_setleds(DWT_LEDS_ENABLE | DWT_LEDS_INIT_BLINK);
+  // Serial.println("INIT OK");
 
   // Configure DW IC. See NOTE 5 below.
   if (dwt_configure(&config)) // if the dwt_configure returns DWT_ERROR either the PLL or RX calibration has failed the host should reset the device
   {
-    test_run_info((unsigned char *)"CONFIG FAILED\r\n");
-    while (100)
-      ;
+    Serial.println("CONFIG FAILED");
+    while (1);
   }
-  // test_run_info((unsigned char *)"CONFIG OK\r\n");
+  // Serial.println("CONFIG OK");
   /* Configure the TX spectrum parameters (power PG delay and PG Count) */
   dwt_configuretxrf(&txconfig_options);
 }
@@ -114,7 +124,7 @@ void loop()
 
   while (!(dwt_read32bitreg(SYS_STATUS_ID) & SYS_STATUS_TXFRS_BIT_MASK))
   {
-    test_run_info((unsigned char *)"WHAT!!!\r\n");
+    Serial.println("WHAT!!!");
     /* Reads and validate device ID returns DWT_ERROR if it does not match expected else DWT_SUCCESS */
     // if (dwt_check_dev_id() == DWT_SUCCESS)
     {
@@ -132,7 +142,10 @@ void loop()
   /* Clear TX frame sent event. */
   dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_TXFRS_BIT_MASK);
 
-  test_run_info((unsigned char *)"TX Frame Sent");
+  digitalWrite(LED_BUILTIN, HIGH);
+  Serial.println("TX Frame Sent");
+  delay(25);
+  digitalWrite(LED_BUILTIN, LOW);
 
   /* Execute a delay between transmissions. */
   Sleep(TX_DELAY_MS);
